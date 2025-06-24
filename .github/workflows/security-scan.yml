@@ -2,6 +2,9 @@ name: 'Build and Scan'
 
 on:
   pull_request:
+  schedule:
+    # Scheduled to run at 8 a.m on every day-of-week from Monday through Friday.
+    - cron:  '0 0 * * *'
 
 jobs:
   build_and_scan:
