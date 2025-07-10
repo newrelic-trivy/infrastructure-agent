@@ -3,8 +3,8 @@ name: 'Repo Level Trivy Scan'
 on:
   pull_request:
   schedule:
-    # Runs daily at midnight UTC
-    - cron: '*/10 * * * *'
+    # Runs daily at 4AM UTC == 12AM EDT
+    - cron: '*/15 * * * *'
 
 jobs:
   # JOB 1: Build the Docker image using the custom script and push it to GHCR
@@ -21,7 +21,7 @@ jobs:
       
     # These variables are now available to ALL steps in this 'build' job
     env:
-      DOCKER_IMAGE: newrelic/infrastructure-bundle
+      DOCKER_IMAGE: newrelic/node-newrelic
       DOCKER_IMAGE_TAG: ci
 
     steps:
