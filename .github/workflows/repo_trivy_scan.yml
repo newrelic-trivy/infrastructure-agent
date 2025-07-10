@@ -21,7 +21,7 @@ jobs:
       
     # These variables are now available to ALL steps in this 'build' job
     env:
-      DOCKER_IMAGE: newrelic/node-newrelic
+      DOCKER_IMAGE: newrelic/infrastructure-agent
       DOCKER_IMAGE_TAG: ci
 
     steps:
