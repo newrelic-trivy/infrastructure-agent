@@ -7,16 +7,23 @@ on:
     - cron: '0 4 * * *'
 
 jobs:
-  # JOB 1: Build the Docker image and push it to GHCR
+  # JOB 1: Build the Docker image using the Makefile and push it to GHCR
   build:
     name: 'Build and Push Docker Image'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # Required to push images to GHCR
+      packages: write
 
     outputs:
-      image-name: ${{ steps.set-image-name.outputs.image-name }}
+      image-name: ${{ steps.tag-and-push.outputs.image-name }}
+      
+    # These variables are used by the Makefile's build process
+    env:
+      DOCKER_IMAGE: newrelic/infrastructure-agent
+      DOCKER_IMAGE_TAG: ci
+      # The 'ci/prerelease' command requires a TAG variable to be set.
+      TAG: ${{ github.sha }}
 
     steps:
       - name: 'Checkout code'
@@ -34,18 +41,18 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # --- This single action replaces all the old custom build steps ---
-      - name: 'Build and push Docker image'
-        uses: docker/build-push-action@v6
-        with:
-          # This assumes your Dockerfile is in the root directory
-          context: .
-          push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+      # --- This step now uses the correct, specific 'make' command ---
+      - name: 'Build local Docker image with Make'
+        run: make ci/prerelease/linux-for-docker
 
-      - name: 'Set image name output'
-        id: set-image-name
-        run: echo "image-name=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+      - name: 'Tag and Push image to GHCR'
+        id: tag-and-push
+        run: |
+          IMAGE_ID=ghcr.io/${{ github.repository }}:${{ github.sha }}
+          # This command uses the env variables to find the source image built by 'make'
+          docker tag ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_IMAGE_TAG }} $IMAGE_ID
+          docker push $IMAGE_ID
+          echo "image-name=$IMAGE_ID" >> $GITHUB_OUTPUT
 
   # JOB 2: Call the reusable organization workflow
   scan:
@@ -54,7 +61,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-      security-events: write # Required to allow the called workflow to upload SARIF results
+      security-events: write
     uses: newrelic-trivy/.github/.github/workflows/org-level-trivy-scan.yml@main
     with:
       image-name: ${{ needs.build.outputs.image-name }}
