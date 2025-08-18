@@ -20,6 +20,8 @@ jobs:
       
     env:
       DOCKER_IMAGE: newrelic/infrastructure-agent
+      # DOCKER_IMAGE_TAG is no longer used by the new push step, but is safe to keep
+      # in case other parts of the Makefile need it.
       DOCKER_IMAGE_TAG: ci
       TAG: ${{ github.sha }}
 
@@ -39,17 +41,29 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # --- This step now uses the correct 'make' command for a CI build ---
       - name: 'Build local Docker image with Make'
         run: make ci/build
 
+      # --- This step is now corrected to find the new image ---
       - name: 'Tag and Push image to GHCR'
         id: tag-and-push
         run: |
-          IMAGE_ID=ghcr.io/${{ github.repository }}:${{ github.sha }}
-          docker tag ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_IMAGE_TAG }} $IMAGE_ID
-          docker push $IMAGE_ID
-          echo "image-name=$IMAGE_ID" >> $GITHUB_OUTPUT
+          # Define the final, full image name we want to use in GHCR
+          FINAL_IMAGE_NAME=ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+          # Find the IMAGE ID of the image that was just built by the 'make' command.
+          # This command lists docker images, filters for the one from this repository,
+          # takes the first result (the most recent), and extracts its IMAGE ID.
+          SOURCE_IMAGE_ID=$(docker images | grep '${{ env.DOCKER_IMAGE }}' | head -n1 | awk '{print $3}')
+
+          # Now, tag that specific, discovered IMAGE ID with our final GHCR name
+          docker tag $SOURCE_IMAGE_ID $FINAL_IMAGE_NAME
+
+          # Push the correctly tagged image
+          docker push $FINAL_IMAGE_NAME
+
+          # Output the final image name for the next job
+          echo "image-name=$FINAL_IMAGE_NAME" >> $GITHUB_OUTPUT
 
   # JOB 2: Call the reusable organization workflow
   scan:
