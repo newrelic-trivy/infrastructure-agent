@@ -1,13 +1,12 @@
 name: 'Repo Level Trivy Scan'
 
 on:
-  pull_request:
   schedule:
-    # Runs daily at 4 AM UTC (11 PM CDT / 12 AM EDT)
     - cron: '0 4 * * *'
+  pull_request:
 
 jobs:
-  # JOB 1: Build the Docker image using the Makefile and push it to GHCR
+  # JOB 1: Build the Docker image directly and push it to GHCR
   build:
     name: 'Build and Push Docker Image'
     runs-on: ubuntu-latest
@@ -16,14 +15,7 @@ jobs:
       packages: write
 
     outputs:
-      image-name: ${{ steps.tag-and-push.outputs.image-name }}
-      
-    env:
-      DOCKER_IMAGE: newrelic/infrastructure-agent
-      # DOCKER_IMAGE_TAG is no longer used by the new push step, but is safe to keep
-      # in case other parts of the Makefile need it.
-      DOCKER_IMAGE_TAG: ci
-      TAG: ${{ github.sha }}
+      image-name: ${{ steps.set-image-name.outputs.image-name }}
 
     steps:
       - name: 'Checkout code'
@@ -35,35 +27,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: 'Set up Go'
-        uses: actions/setup-go@v5
+
+      # This single, standard action replaces all custom build scripts.
+      - name: 'Build and push Docker image'
+        uses: docker/build-push-action@v6
         with:
-          go-version-file: go.mod
+          # The build context is the root of the repository
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          # This is the key: we point directly to the Dockerfile inside the 'build' directory
+          file: ./build/Dockerfile
 
-      - name: 'Build local Docker image with Make'
-        run: make ci/build
-
-      # --- This step is now corrected to find the new image ---
-      - name: 'Tag and Push image to GHCR'
-        id: tag-and-push
-        run: |
-          # Define the final, full image name we want to use in GHCR
-          FINAL_IMAGE_NAME=ghcr.io/${{ github.repository }}:${{ github.sha }}
-
-          # Find the IMAGE ID of the image that was just built by the 'make' command.
-          # This command lists docker images, filters for the one from this repository,
-          # takes the first result (the most recent), and extracts its IMAGE ID.
-          SOURCE_IMAGE_ID=$(docker images | grep '${{ env.DOCKER_IMAGE }}' | head -n1 | awk '{print $3}')
-
-          # Now, tag that specific, discovered IMAGE ID with our final GHCR name
-          docker tag $SOURCE_IMAGE_ID $FINAL_IMAGE_NAME
-
-          # Push the correctly tagged image
-          docker push $FINAL_IMAGE_NAME
-
-          # Output the final image name for the next job
-          echo "image-name=$FINAL_IMAGE_NAME" >> $GITHUB_OUTPUT
+      - name: 'Set image name output'
+        id: set-image-name
+        run: echo "image-name=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
   # JOB 2: Call the reusable organization workflow
   scan:
